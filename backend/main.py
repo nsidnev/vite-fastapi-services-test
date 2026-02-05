@@ -28,6 +28,7 @@ class ActionRequest(BaseModel):
     action: str
     direction: Optional[str] = None
     target_id: Optional[str] = None
+    item: Optional[str] = None
 
 
 class Anomaly(TypedDict):
@@ -38,6 +39,18 @@ class Anomaly(TypedDict):
     value: int
     risk: int
     collected: bool
+
+
+class Station(TypedDict):
+    id: str
+    name: str
+    x: int
+    y: int
+
+
+class PendingEvent(TypedDict):
+    type: str
+    threat: int
 
 
 class GameState(BaseModel):
@@ -52,6 +65,8 @@ class GameState(BaseModel):
     status: str
     log: List[str]
     anomalies: List[Anomaly]
+    stations: List[Station]
+    pending_event: Optional[PendingEvent]
 
 
 games: Dict[str, GameState] = {}
@@ -93,9 +108,60 @@ def generate_anomalies(seed: int) -> List[Anomaly]:
     return anomalies
 
 
+def generate_stations(seed: int) -> List[Station]:
+    rng = random.Random(seed + 4242)
+    names = [
+        "Cinder Tradepost",
+        "Nova Exchange",
+        "Kepler Bazaar",
+        "Drydock 19",
+        "Marrow Port",
+    ]
+    stations: List[Station] = []
+    while len(stations) < 3:
+        x = rng.randrange(MAP_SIZE)
+        y = rng.randrange(MAP_SIZE)
+        if x == 0 and y == 0:
+            continue
+        if any(s["x"] == x and s["y"] == y for s in stations):
+            continue
+        stations.append(
+            {
+                "id": uuid.uuid4().hex,
+                "name": rng.choice(names),
+                "x": x,
+                "y": y,
+            }
+        )
+    return stations
+
+
+def station_offers() -> List[Dict[str, object]]:
+    return [
+        {
+            "id": "fuel_cell",
+            "label": "Fuel Cells (+2 fuel)",
+            "price": 4,
+        },
+        {
+            "id": "hull_patch",
+            "label": "Hull Patch (+1 hull)",
+            "price": 6,
+        },
+    ]
+
+
+def current_station(state: GameState) -> Optional[Station]:
+    return next(
+        (s for s in state.stations if s["x"] == state.x and s["y"] == state.y),
+        None,
+    )
+
+
 def public_state(
     state: GameState, nearby: Optional[List[Dict[str, object]]] = None
 ) -> Dict[str, object]:
+    station = current_station(state)
     return {
         "id": state.id,
         "turn": state.turn,
@@ -109,6 +175,14 @@ def public_state(
         "mapSize": MAP_SIZE,
         "goalCredits": GOAL_CREDITS,
         "nearby": nearby or [],
+        "station": {
+            "id": station["id"],
+            "name": station["name"],
+            "offers": station_offers(),
+        }
+        if station
+        else None,
+        "pendingEvent": state.pending_event,
     }
 
 
@@ -143,6 +217,8 @@ def new_game() -> Dict[str, object]:
         status="active",
         log=["Docked at Base. Systems green."],
         anomalies=generate_anomalies(seed),
+        stations=generate_stations(seed),
+        pending_event=None,
     )
     games[game_id] = state
     return public_state(state)
@@ -160,6 +236,9 @@ def act(request: ActionRequest) -> Dict[str, object]:
     action = request.action.lower()
     rng = random.Random(state.seed + state.turn * 31 + state.x * 13 + state.y * 7)
     nearby: Optional[List[Dict[str, object]]] = None
+
+    if state.pending_event and action not in {"fight", "bribe", "evade"}:
+        raise HTTPException(status_code=400, detail="Resolve the ambush first")
 
     if action == "scan":
         nearby = [
@@ -200,6 +279,12 @@ def act(request: ActionRequest) -> Dict[str, object]:
             state.log.append("Micrometeor swarm scraped the hull.")
         else:
             state.log.append("Transit clean. Engines humming.")
+        if rng.random() < 0.2:
+            state.pending_event = {
+                "type": "pirate_ambush",
+                "threat": rng.randint(1, 3),
+            }
+            state.log.append("Pirate ambush! They demand cargo or a fight.")
     elif action == "salvage":
         target_id = request.target_id
         if not target_id:
@@ -220,6 +305,31 @@ def act(request: ActionRequest) -> Dict[str, object]:
         state.log.append(
             f"Recovered {anomaly['name']} worth {anomaly['value']} credits."
         )
+    elif action == "trade":
+        station = current_station(state)
+        if not station:
+            raise HTTPException(status_code=400, detail="No trade station here")
+        item = request.item
+        if item == "fuel_cell":
+            price = 4
+            if state.credits < price:
+                raise HTTPException(status_code=400, detail="Not enough credits")
+            if state.fuel >= MAX_FUEL:
+                raise HTTPException(status_code=400, detail="Fuel already full")
+            state.credits -= price
+            state.fuel = min(MAX_FUEL, state.fuel + 2)
+            state.log.append("Traded for fuel cells.")
+        elif item == "hull_patch":
+            price = 6
+            if state.credits < price:
+                raise HTTPException(status_code=400, detail="Not enough credits")
+            if state.hull >= MAX_HULL:
+                raise HTTPException(status_code=400, detail="Hull already full")
+            state.credits -= price
+            state.hull = min(MAX_HULL, state.hull + 1)
+            state.log.append("Installed a fresh hull patch.")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid trade item")
     elif action == "refuel":
         if state.x != 0 or state.y != 0:
             raise HTTPException(status_code=400, detail="Refuel only at base")
@@ -240,6 +350,43 @@ def act(request: ActionRequest) -> Dict[str, object]:
         state.credits -= 8
         state.hull = min(MAX_HULL, state.hull + 2)
         state.log.append("Mechanics sealed the hull fractures.")
+    elif action == "fight":
+        if not state.pending_event:
+            raise HTTPException(status_code=400, detail="No active threat")
+        threat = state.pending_event["threat"]
+        if rng.random() < 0.55:
+            reward = threat * 6
+            state.credits += reward
+            state.log.append(f"Fought off pirates and looted {reward} credits.")
+        else:
+            damage = threat
+            loss = min(state.credits, threat * 4)
+            state.hull -= damage
+            state.credits -= loss
+            state.log.append("Pirates scored hits before breaking off.")
+        state.pending_event = None
+    elif action == "bribe":
+        if not state.pending_event:
+            raise HTTPException(status_code=400, detail="No active threat")
+        threat = state.pending_event["threat"]
+        cost = threat * 8
+        if state.credits < cost:
+            raise HTTPException(status_code=400, detail="Not enough credits")
+        state.credits -= cost
+        state.pending_event = None
+        state.log.append("Paid off the pirates. They drift away.")
+    elif action == "evade":
+        if not state.pending_event:
+            raise HTTPException(status_code=400, detail="No active threat")
+        if state.fuel <= 0:
+            raise HTTPException(status_code=400, detail="Out of fuel")
+        state.fuel -= 1
+        if rng.random() < 0.4:
+            state.hull -= 1
+            state.log.append("Evasion failed. Took a glancing hit.")
+        else:
+            state.log.append("Evasion successful. Pirates lost the trail.")
+        state.pending_event = None
     else:
         raise HTTPException(status_code=400, detail="Unknown action")
 

@@ -181,6 +181,50 @@ button:disabled {
     margin-bottom: 12px;
 }
 
+.trade .station h3 {
+    margin: 0 0 4px;
+}
+
+.trade .station p {
+    margin: 0 0 12px;
+    color: #b4c2f0;
+    font-size: 13px;
+}
+
+.trade .offer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(18, 28, 54, 0.7);
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.encounter .alert {
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(112, 24, 24, 0.65);
+    color: #ffd9d9;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.encounter .options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.encounter .hint {
+    margin: 0;
+    font-size: 12px;
+    color: #f5d36b;
+}
+
 .salvage h3 {
     margin: 0 0 4px;
 }

@@ -10,6 +10,8 @@ const statsEl = document.querySelector("#stats");
 const mapEl = document.querySelector("#map");
 const logEl = document.querySelector("#log");
 const salvageEl = document.querySelector("#salvage");
+const tradeEl = document.querySelector("#trade");
+const encounterEl = document.querySelector("#encounter");
 const statusMessageEl = document.querySelector("#statusMessage");
 const travelButtons = document.querySelectorAll(".travel button[data-dir]");
 
@@ -33,7 +35,9 @@ function renderStats() {
         formatStatus(state.status.toUpperCase(), "Status")
     ].join("");
 
-    if (state.status === "won") {
+    if (state.pendingEvent) {
+        statusMessageEl.textContent = "Pirate ambush in progress. Resolve the encounter.";
+    } else if (state.status === "won") {
         statusMessageEl.textContent = "Mission complete. Docked with a legendary haul.";
     } else if (state.status === "lost") {
         statusMessageEl.textContent = "Hull integrity lost. Salvage run terminated.";
@@ -82,6 +86,8 @@ function renderSalvage() {
         return;
     }
 
+    const disableActions = Boolean(state.pendingEvent);
+
     salvageEl.innerHTML = scanResults
         .map(
             (target) => `
@@ -90,7 +96,7 @@ function renderSalvage() {
                         <h3>${target.name}</h3>
                         <p>Value: ${target.value} cr | Risk: ${target.risk}</p>
                     </div>
-                    <button data-salvage="${target.id}">Salvage</button>
+                    <button data-salvage="${target.id}" ${disableActions ? "disabled" : ""}>Salvage</button>
                 </div>
             `
         )
@@ -98,6 +104,67 @@ function renderSalvage() {
 
     salvageEl.querySelectorAll("button[data-salvage]").forEach((button) => {
         button.addEventListener("click", () => handleSalvage(button.dataset.salvage));
+    });
+}
+
+function renderTrade() {
+    if (!state) {
+        tradeEl.innerHTML = "<p>No trade stations on comms.</p>";
+        return;
+    }
+
+    const station = state.station;
+    if (!station) {
+        tradeEl.innerHTML = "<p>No trade station in this sector.</p>";
+        return;
+    }
+
+    const disableActions = Boolean(state.pendingEvent);
+    tradeEl.innerHTML = `
+        <div class="station">
+            <h3>${station.name}</h3>
+            <p>Dock for supplies and upgrades.</p>
+        </div>
+        <div class="offers">
+            ${station.offers
+                .map(
+                    (offer) => `
+                        <div class="offer">
+                            <span>${offer.label}</span>
+                            <button data-trade="${offer.id}" ${disableActions ? "disabled" : ""}>
+                                ${offer.price} cr
+                            </button>
+                        </div>
+                    `
+                )
+                .join("")}
+        </div>
+    `;
+
+    tradeEl.querySelectorAll("button[data-trade]").forEach((button) => {
+        button.addEventListener("click", () => handleTrade(button.dataset.trade));
+    });
+}
+
+function renderEncounter() {
+    if (!state || !state.pendingEvent) {
+        encounterEl.innerHTML = "<p>No active encounters.</p>";
+        return;
+    }
+
+    const threat = state.pendingEvent.threat;
+    encounterEl.innerHTML = `
+        <div class="alert">Pirate ambush! Threat level ${threat}.</div>
+        <div class="options">
+            <button data-encounter="fight">Fight</button>
+            <button data-encounter="bribe">Bribe</button>
+            <button data-encounter="evade">Evade</button>
+        </div>
+        <p class="hint">Resolve the ambush to continue traveling.</p>
+    `;
+
+    encounterEl.querySelectorAll("button[data-encounter]").forEach((button) => {
+        button.addEventListener("click", () => handleEncounter(button.dataset.encounter));
     });
 }
 
@@ -191,6 +258,41 @@ async function handleSalvage(targetId) {
     }
 }
 
+async function handleTrade(item) {
+    if (!state) return;
+    setBusy(true);
+    try {
+        const response = await request("/act", {
+            game_id: state.id,
+            action: "trade",
+            item
+        });
+        state = response;
+        render();
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        setBusy(false);
+    }
+}
+
+async function handleEncounter(action) {
+    if (!state) return;
+    setBusy(true);
+    try {
+        const response = await request("/act", {
+            game_id: state.id,
+            action
+        });
+        state = response;
+        render();
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        setBusy(false);
+    }
+}
+
 async function handleRefuel() {
     if (!state) return;
     setBusy(true);
@@ -224,6 +326,19 @@ function render() {
     renderMap();
     renderLog();
     renderSalvage();
+    renderTrade();
+    renderEncounter();
+    updateControls();
+}
+
+function updateControls() {
+    const disableRegular = !state || Boolean(state.pendingEvent);
+    scanButton.disabled = disableRegular;
+    refuelButton.disabled = disableRegular;
+    repairButton.disabled = disableRegular;
+    travelButtons.forEach((button) => {
+        button.disabled = disableRegular;
+    });
 }
 
 newGameButton.addEventListener("click", startGame);
