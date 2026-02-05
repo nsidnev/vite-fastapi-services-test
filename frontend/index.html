@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Starline Salvage</title>
+    </head>
+    <body>
+        <div id="app">
+            <header class="hero">
+                <p class="eyebrow">Salvage Run // Sector 7</p>
+                <h1>Starline Salvage</h1>
+                <p class="subtitle">Push your rig through drifting relics, haul back credits, and keep the hull intact.</p>
+            </header>
+
+            <section class="panel controls">
+                <button id="newGame">Start New Run</button>
+                <button id="scan">Scan Sector</button>
+                <button id="refuel">Refuel</button>
+                <button id="repair">Repair</button>
+            </section>
+
+            <section class="layout">
+                <div class="panel stats">
+                    <h2>Ship Status</h2>
+                    <div id="stats"></div>
+                    <div id="statusMessage" class="status"></div>
+                </div>
+
+                <div class="panel map">
+                    <h2>Sector Map</h2>
+                    <div id="map"></div>
+                    <div class="travel">
+                        <button data-dir="n">North</button>
+                        <div>
+                            <button data-dir="w">West</button>
+                            <button data-dir="s">South</button>
+                            <button data-dir="e">East</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel salvage">
+                    <h2>Salvage Targets</h2>
+                    <div id="salvage"></div>
+                </div>
+            </section>
+
+            <section class="panel log">
+                <h2>Flight Log</h2>
+                <ul id="log"></ul>
+            </section>
+        </div>
+        <script type="module" src="/src/main.js"></script>
+    </body>
+</html>
