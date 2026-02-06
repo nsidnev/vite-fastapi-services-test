@@ -1,6 +1,6 @@
 import "./style.css";
 
-const apiBase = "/api";
+const apiBase = "/_/backend";
 
 const newGameButton = document.querySelector("#newGame");
 const scanButton = document.querySelector("#scan");
